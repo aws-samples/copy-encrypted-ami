@@ -31,10 +31,10 @@ copy_encrypted_ami.sh -s profile -d profile -a ami_id [-k key] [-l source region
     -r,               Destination region for copied AMI.
     -n,               Enable ENA support on new AMI. (Optional)
     -t,               Copy Tags. (Optional)
-    -k,               Specific KMS Key ID for snapshot re-encryption in target AWS account. (Optional)
+    -k,               Specific AWS KMS Key ID for snapshot re-encryption in target AWS account. (Optional)
     -h,               Show this message.
 ```
-By default, the currently specified region for the source and destination AWS CLI profile will be used, and the default Amazon-managed KMS Key for EBS
+By default, the currently specified region for the source and destination AWS CLI profile will be used, and the default Amazon-managed AWS KMS Key for Amazon EBS.
 
 ## Setting up the profiles
 
@@ -51,10 +51,10 @@ The line above copies the AMI ami-61341708 present in the account configured in 
 
 ```copy_encrypted_ami.sh -s mysrclocal -d mydstprofile -a ami-61341708 -k arn:aws:kms:eu-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab -l ap-southeast-2 -r eu-west-2 -n```
 
-The line above copies the AMI ami-61341708 present in the region ap-southeast-2 for the account configured in the local mysrcprofile to the account configured in the local mydstprofile in the region eu-west-2, using KMS key arn:aws:kms:eu-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab in the destination and enabling ENA Support.
+The line above copies the AMI ami-61341708 present in the region ap-southeast-2 for the account configured in the local mysrcprofile to the account configured in the local mydstprofile in the region eu-west-2, using AWS KMS key arn:aws:kms:eu-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab in the destination and enabling ENA Support.
 
 ## Known Limitations
 
-This script will not work if the default KMS key was used to encrypt the source snapshots.
+This script will not work if the default AWS KMS key was used to encrypt the source snapshots.
 
 This script will encrypt the snapshots at the destination, even if one of the source snapshots was unencrypted.
