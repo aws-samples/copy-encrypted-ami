@@ -58,3 +58,7 @@ The line above copies the AMI ami-61341708 present in the region ap-southeast-2 
 This script will not work if the default AWS KMS key was used to encrypt the source snapshots.
 
 This script will encrypt the snapshots at the destination, even if one of the source snapshots was unencrypted.
+
+## Known issues
+**An error occurred (ResourceLimitExceeded) when calling the CopySnapshot operation: Too many snapshot copies in progress. The limit is 5 for this destination region.**
+This happens if your AMI has more than 5 EBS Volumes, you might need to request a limit increase for concurrent snapshot creation by opening a support ticket under the destination account.
