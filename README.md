@@ -60,5 +60,4 @@ This script will not work if the default AWS KMS key was used to encrypt the sou
 This script will encrypt the snapshots at the destination, even if one of the source snapshots was unencrypted.
 
 ## Known issues
-**An error occurred (ResourceLimitExceeded) when calling the CopySnapshot operation: Too many snapshot copies in progress. The limit is 5 for this destination region.**
-This happens if your AMI has more than 5 EBS Volumes, you might need to request a limit increase for concurrent snapshot creation by opening a support ticket under the destination account.
+- If the Snapshot takes more than 10 minutes to complete, the wait condition will fail.
