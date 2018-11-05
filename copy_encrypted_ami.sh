@@ -87,7 +87,7 @@ if [ "${SRC_REGION}x" == "x" ]; then
 fi
 if [ "${DST_REGION}x" == "x" ]; then
     DST_REGION=$(aws configure get region --profile ${DST_PROFILE} ) || die "Unable to determine the destination region"
-    
+
 fi
 echo -e "${COLOR}Source region:${NC}" ${SRC_REGION}
 echo -e "${COLOR}Destination region:${NC}" ${DST_REGION}
@@ -130,18 +130,25 @@ while read key; do
     echo -e "${COLOR}Grant created for:${NC}" ${key}
 done <<< "$KMS_KEY_IDS"
 
-# Iterate over the snapshots and add permissions for the destination account
+# Iterate over the snapshots, adding permissions for the destination account and copying
 i=0
 while read snapshotid; do
     aws ec2 --profile ${SRC_PROFILE} --region ${SRC_REGION} modify-snapshot-attribute --snapshot-id $snapshotid --attribute createVolumePermission --operation-type add --user-ids $DST_ACCT_ID || die "Unable to add permissions on the snapshots for the destination account. Aborting."
     echo -e "${COLOR}Permission added to Snapshot:${NC} ${snapshotid}"
     SRC_SNAPSHOT[$i]=${snapshotid}
+    echo -e "${COLOR}Copying Snapshot:${NC} ${snapshotid}"
     DST_SNAPSHOT[$i]=$(aws ec2 copy-snapshot --profile ${DST_PROFILE} --region ${DST_REGION} --source-region ${SRC_REGION} --source-snapshot-id $snapshotid --description "Copied from $snapshotid" --encrypted ${CMK_OPT} --query SnapshotId --output text|| die "Unable to copy snapshot. Aborting.")
     i=$(( $i + 1 ))
+    SIM_SNAP=$(aws ec2 describe-snapshots --profile ${DST_PROFILE} --region ${DST_REGION} --filters Name=status,Values=pending --output text | wc -l)
+    while [ $SIM_SNAP -ge 5 ]; do
+        echo -e "${COLOR}Too many concurrent Snapshots, waiting...${NC}"
+        sleep 30
+        SIM_SNAP=$(aws ec2 describe-snapshots --profile ${DST_PROFILE} --region ${DST_REGION} --filters Name=status,Values=pending --output text | wc -l)
+    done
+
 done <<< "$SNAPSHOT_IDS"
 
 # Wait 1 second to avoid issues with eventual consistency
-
 sleep 1
 
 # Wait for EBS snapshots to be completed
@@ -168,10 +175,10 @@ NEW_AMI_DETAILS=$(echo ${AMI_DETAILS} | jq '.Name |= "Copy of " + . + " \(now)" 
 CREATED_AMI=$(aws ec2 register-image --profile ${DST_PROFILE} --region ${DST_REGION} ${ENA_OPT} --cli-input-json "${NEW_AMI_DETAILS}" --query ImageId --output text || die "Unable to register AMI in the destination account. Aborting.")
 echo -e "${COLOR}AMI created succesfully in the destination account:${NC} ${CREATED_AMI}"
 
-# Copy Tags 
+# Copy Tags
 if [ "${TAG_OPT}x" != "x" ]; then
     AMI_TAGS=$(echo ${AMI_DETAILS} | jq '.Tags')"}"
     NEW_AMI_TAGS="{\"Tags\":"$(echo ${AMI_TAGS} | tr -d ' ')
-    $(aws ec2 create-tags --resources ${CREATED_AMI} --cli-input-json ${NEW_AMI_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the AMI in the destination account. Aborting.") 
+    $(aws ec2 create-tags --resources ${CREATED_AMI} --cli-input-json ${NEW_AMI_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the AMI in the destination account. Aborting.")
     echo -e "${COLOR}Tags added sucessfully${NC}"
 fi
