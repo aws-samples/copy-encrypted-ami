@@ -113,7 +113,7 @@ AMI_DETAILS=$(aws ec2 describe-images --profile ${SRC_PROFILE} --region ${SRC_RE
 
 
 # Retrieve the snapshots and key ID's
-SNAPSHOT_IDS=$(echo ${AMI_DETAILS} | jq -r '.BlockDeviceMappings[] | select(has("VirtualName") | not) | .Ebs.SnapshotId' || die "Unable to get the encrypted snapshot ids from AMI. Aborting.")
+SNAPSHOT_IDS=$(echo ${AMI_DETAILS} | jq -r '.BlockDeviceMappings[] | select(has("Ebs")) | .Ebs.SnapshotId' || die "Unable to get the encrypted snapshot ids from AMI. Aborting.")
 echo -e "${COLOR}Snapshots found:${NC}" ${SNAPSHOT_IDS}
 
 KMS_KEY_IDS=$(aws ec2 describe-snapshots --profile ${SRC_PROFILE} --region ${SRC_REGION}  --snapshot-ids ${SNAPSHOT_IDS} --query 'Snapshots[?Encrypted==`true`]' | jq -r '[.[].KmsKeyId] | unique | .[]' || die "Unable to get KMS Key Ids from the snapshots. Aborting.")
