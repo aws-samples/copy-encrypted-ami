@@ -155,6 +155,24 @@ sleep 1
 echo -e "${COLOR}Waiting for all EBS Snapshots copies to complete. It may take a few minutes.${NC}"
 i=0
 while read snapshotid; do
+    snapshot_progress="0%"
+    snapshot_state=""
+    while [ "$snapshot_progress" != "100%" ]; do
+        snapshot_result=$(aws ec2 describe-snapshots --region ${DST_REGION} \
+                                                     --snapshot-ids ${DST_SNAPSHOT[i]} \
+                                                     --profile ${DST_PROFILE} \
+                                                     --no-paginate \
+                                                     --query "Snapshots[*].[Progress, State]" \
+                                                     --output text)
+        snapshot_progress=$(echo $snapshot_result | awk '{print $1}')
+        snapshot_state=$(echo $snapshot_result | awk '{print $2}')
+        if [ "${snapshot_state}" == "error" ]; then
+            die "Error copying snapshot"
+        else
+        echo -e "${COLOR} Snapshot progress: ${DST_SNAPSHOT[i]} $snapshot_progress"
+        fi
+        sleep 20
+    done
     aws ec2 wait snapshot-completed --snapshot-ids ${DST_SNAPSHOT[i]} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Failed while waiting the snapshots to be copied. Aborting."
     i=$(( $i + 1 ))
 done <<< "$SNAPSHOT_IDS"

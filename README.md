@@ -60,4 +60,7 @@ This script will not work if the default AWS KMS key was used to encrypt the sou
 This script will encrypt the snapshots at the destination, even if one of the source snapshots was unencrypted.
 
 ## Known issues
-- If the Snapshot takes more than 10 minutes to complete, the wait condition will fail.
+
+Will fail if an ephemeral volume is present: https://github.com/aws-samples/copy-encrypted-ami/issues/5
+
+Will fail if there is not at least one encrypted snapshot in the origin AMI: https://github.com/aws-samples/copy-encrypted-ami/issues/7
