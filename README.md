@@ -58,9 +58,3 @@ The line above copies the AMI ami-61341708 present in the region ap-southeast-2 
 This script will not work if the default AWS KMS key was used to encrypt the source snapshots.
 
 This script will encrypt the snapshots at the destination, even if one of the source snapshots was unencrypted.
-
-## Known issues
-
-Will fail if an ephemeral volume is present: https://github.com/aws-samples/copy-encrypted-ami/issues/5
-
-Will fail if there is not at least one encrypted snapshot in the origin AMI: https://github.com/aws-samples/copy-encrypted-ami/issues/7
