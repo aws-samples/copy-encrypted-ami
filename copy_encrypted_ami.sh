@@ -111,24 +111,26 @@ fi
 # Describes the source AMI and stores its contents
 AMI_DETAILS=$(aws ec2 describe-images --profile ${SRC_PROFILE} --region ${SRC_REGION} --image-id ${AMI_ID}  --query 'Images[0]')|| die "Unable to describe the AMI in the source account. Aborting."
 
-
 # Retrieve the snapshots and key ID's
 SNAPSHOT_IDS=$(echo ${AMI_DETAILS} | jq -r '.BlockDeviceMappings[] | select(has("Ebs")) | .Ebs.SnapshotId' || die "Unable to get the encrypted snapshot ids from AMI. Aborting.")
 echo -e "${COLOR}Snapshots found:${NC}" ${SNAPSHOT_IDS}
 
 KMS_KEY_IDS=$(aws ec2 describe-snapshots --profile ${SRC_PROFILE} --region ${SRC_REGION}  --snapshot-ids ${SNAPSHOT_IDS} --query 'Snapshots[?Encrypted==`true`]' | jq -r '[.[].KmsKeyId] | unique | .[]' || die "Unable to get KMS Key Ids from the snapshots. Aborting.")
-echo -e "${COLOR}Customer managed KMS key(s) used on source AMI:${NC}" ${KMS_KEY_IDS}
 
-# Iterate over the Keys and create the Grants
-while read key; do
-    KEY_MANAGER=$(aws kms describe-key --key-id ${key} --query "KeyMetadata.KeyManager" --profile ${SRC_PROFILE} --region ${SRC_REGION} --output text || die "Unable to retrieve the Key Manager information. Aborting.")
-    if [ "${KEY_MANAGER}" == "AWS" ] ; then
-        # Technically, we could copy and re-encrypt the snapshot, then continue.....
-        die "The Default AWS/EBS key is being used by the snapshot. Unable to proceed. Aborting."
-    fi
-    aws kms --profile ${SRC_PROFILE} --region ${SRC_REGION} create-grant --key-id $key --grantee-principal $DST_ACCT_ID --operations DescribeKey Decrypt CreateGrant > /dev/null || die "Unable to create a KMS grant for the destination account. Aborting."
-    echo -e "${COLOR}Grant created for:${NC}" ${key}
-done <<< "$KMS_KEY_IDS"
+if [ "${KMS_KEY_IDS}x" != "x" ] ; then
+  echo -e "${COLOR}Customer managed KMS key(s) used on source AMI:${NC}" ${KMS_KEY_IDS}
+  # Iterate over the Keys and create the Grants
+  while read key; do
+      KEY_MANAGER=$(aws kms describe-key --key-id ${key} --query "KeyMetadata.KeyManager" --profile ${SRC_PROFILE} --region ${SRC_REGION} --output text || die "Unable to retrieve the Key Manager information. Aborting.")
+      if [ "${KEY_MANAGER}" == "AWS" ] ; then
+          die "The Default AWS/EBS key is being used by the snapshot. Unable to proceed. Aborting."
+      fi
+      aws kms --profile ${SRC_PROFILE} --region ${SRC_REGION} create-grant --key-id $key --grantee-principal $DST_ACCT_ID --operations DescribeKey Decrypt CreateGrant > /dev/null || die "Unable to create a KMS grant for the destination account. Aborting."
+      echo -e "${COLOR}Grant created for:${NC}" ${key}
+  done <<< "$KMS_KEY_IDS"
+else
+  echo -e "${COLOR}No encrypted EBS Volumes were found in the source AMI!${NC}"
+fi
 
 # Iterate over the snapshots, adding permissions for the destination account and copying
 i=0
