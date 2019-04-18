@@ -141,11 +141,11 @@ while read snapshotid; do
     echo -e "${COLOR}Copying Snapshot:${NC} ${snapshotid}"
     DST_SNAPSHOT[$i]=$(aws ec2 copy-snapshot --profile ${DST_PROFILE} --region ${DST_REGION} --source-region ${SRC_REGION} --source-snapshot-id $snapshotid --description "Copied from $snapshotid" --encrypted ${CMK_OPT} --query SnapshotId --output text|| die "Unable to copy snapshot. Aborting.")
     i=$(( $i + 1 ))
-    SIM_SNAP=$(aws ec2 describe-snapshots --profile ${DST_PROFILE} --region ${DST_REGION} --filters Name=status,Values=pending --output text | wc -l)
+    SIM_SNAP=$(aws ec2 describe-snapshots --profile "${DST_PROFILE}" --region "${DST_REGION}" --filters Name=status,Values=pending --query 'Snapshots[].SnapshotId' --output text | wc -w)
     while [ $SIM_SNAP -ge 5 ]; do
         echo -e "${COLOR}Too many concurrent Snapshots, waiting...${NC}"
         sleep 30
-        SIM_SNAP=$(aws ec2 describe-snapshots --profile ${DST_PROFILE} --region ${DST_REGION} --filters Name=status,Values=pending --output text | wc -l)
+        SIM_SNAP=$(aws ec2 describe-snapshots --profile "${DST_PROFILE}" --region "${DST_REGION}" --filters Name=status,Values=pending --query 'Snapshots[].SnapshotId' --output text | wc -w)
     done
 
 done <<< "$SNAPSHOT_IDS"
