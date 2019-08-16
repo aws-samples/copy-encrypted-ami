@@ -21,6 +21,7 @@ usage()
     -s,               AWS CLI profile name for AMI source account.
     -d,               AWS CLI profile name for AMI destination account.
     -a,               ID of AMI to be copied.
+    -N,               Name for new AMI.
     -l,               Region of the AMI to be copied.
     -r,               Destination region for copied AMI.
     -n,               Enable ENA support on new AMI. (Optional)
@@ -210,7 +211,7 @@ echo -e "${COLOR}AMI created succesfully in the destination account:${NC} ${CREA
 # Copy Tags
 if [ "${TAG_OPT}x" != "x" ]; then
     AMI_TAGS=$(echo ${AMI_DETAILS} | jq '.Tags')"}"
-    if [ "${AMI_TAGS}x" != "x" ]; then
+    if [ "${AMI_TAGS}" != "null}" ]; then
         NEW_AMI_TAGS="{\"Tags\":"$(echo ${AMI_TAGS} | tr -d ' ')
         $(aws ec2 create-tags --resources ${CREATED_AMI} --cli-input-json ${NEW_AMI_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the AMI in the destination account. Aborting.")
         echo -e "${COLOR}Tags added sucessfully${NC}"
