@@ -21,6 +21,7 @@ usage()
     -s,               AWS CLI profile name for AMI source account.
     -d,               AWS CLI profile name for AMI destination account.
     -a,               ID of AMI to be copied.
+    -N,               Name for new AMI.
     -l,               Region of the AMI to be copied.
     -r,               Destination region for copied AMI.
     -n,               Enable ENA support on new AMI. (Optional)
@@ -46,7 +47,7 @@ command -v aws >/dev/null 2>&1 || die "aws cli is required but not installed. Ab
 
 
 
-while getopts ":s:d:a:l:r:k:nth" opt; do
+while getopts ":s:d:a:N:l:r:k:nth" opt; do
     case $opt in
         h) usage && exit 1
         ;;
@@ -55,6 +56,8 @@ while getopts ":s:d:a:l:r:k:nth" opt; do
         d) DST_PROFILE="$OPTARG"
         ;;
         a) AMI_ID="$OPTARG"
+        ;;
+        N) AMI_NAME="$OPTARG"
         ;;
         l) SRC_REGION="$OPTARG"
         ;;
@@ -188,8 +191,18 @@ for (( i=0; i<${sLen}; i++)); do
     AMI_DETAILS=$(echo ${AMI_DETAILS} | sed -e s/${SRC_SNAPSHOT[i]}/${DST_SNAPSHOT[i]}/g )
 done
 
+# define a name for the new AMI
+NAME=$(echo ${AMI_DETAILS} | jq -r '.Name')
+if [ "${AMI_NAME}x" != "x" ]; then
+    # use the name supplied
+    NEW_NAME=${AMI_NAME}
+else
+    now="$(date +%s)"
+    NEW_NAME="Copy of ${NAME} ${now}"
+fi
+
 # Copy AMI structure while removing read-only / non-idempotent values
-NEW_AMI_DETAILS=$(echo ${AMI_DETAILS} | jq '.Name |= "Copy of " + . + " \(now)" | del(.. | .Encrypted?) | del(.Tags,.Platform,.ImageId,.CreationDate,.OwnerId,.ImageLocation,.State,.ImageType,.RootDeviceType,.Hypervisor,.Public,.EnaSupport )')
+NEW_AMI_DETAILS=$(echo ${AMI_DETAILS} | jq --arg NAME "${NEW_NAME}" '.Name = $NAME | del(.. | .Encrypted?) | del(.Tags,.Platform,.ImageId,.CreationDate,.OwnerId,.ImageLocation,.State,.ImageType,.RootDeviceType,.Hypervisor,.Public,.EnaSupport,.ProductCodes )')
 
 # Create the AMI in the destination
 CREATED_AMI=$(aws ec2 register-image --profile ${DST_PROFILE} --region ${DST_REGION} ${ENA_OPT} --cli-input-json "${NEW_AMI_DETAILS}" --query ImageId --output text || die "Unable to register AMI in the destination account. Aborting.")
@@ -198,7 +211,9 @@ echo -e "${COLOR}AMI created succesfully in the destination account:${NC} ${CREA
 # Copy Tags
 if [ "${TAG_OPT}x" != "x" ]; then
     AMI_TAGS=$(echo ${AMI_DETAILS} | jq '.Tags')"}"
-    NEW_AMI_TAGS="{\"Tags\":"$(echo ${AMI_TAGS} | tr -d ' ')
-    $(aws ec2 create-tags --resources ${CREATED_AMI} --cli-input-json ${NEW_AMI_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the AMI in the destination account. Aborting.")
-    echo -e "${COLOR}Tags added sucessfully${NC}"
+    if [ "${AMI_TAGS}" != "null}" ]; then
+        NEW_AMI_TAGS="{\"Tags\":"$(echo ${AMI_TAGS} | tr -d ' ')
+        $(aws ec2 create-tags --resources ${CREATED_AMI} --cli-input-json ${NEW_AMI_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the AMI in the destination account. Aborting.")
+        echo -e "${COLOR}Tags added sucessfully${NC}"
+    fi
 fi
