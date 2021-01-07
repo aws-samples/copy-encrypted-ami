@@ -189,6 +189,12 @@ echo -e "${COLOR}EBS Snapshots copies completed ${NC}"
 
 sLen=${#SRC_SNAPSHOT[@]}
 
+# Prepares the json data with the new snapshot IDs and remove unecessary information
+for (( i=0; i<${sLen}; i++)); do
+    echo -e "${COLOR}Snapshots${NC} ${SRC_SNAPSHOT[i]} ${COLOR}copied as${NC} ${DST_SNAPSHOT[i]}"
+    AMI_DETAILS=$(echo ${AMI_DETAILS} | sed -e s/${SRC_SNAPSHOT[i]}/${DST_SNAPSHOT[i]}/g )
+done
+
 # Copy Snapshots Tags
 if [ "${TAG_OPT}x" != "x" ]; then
     for (( i=0; i<${sLen}; i++)); do
@@ -201,16 +207,10 @@ if [ "${TAG_OPT}x" != "x" ]; then
             if [ "${UPDATE_ENV_TAG_OPT}x" != "x" ]; then
                 $(aws ec2 create-tags --resources ${DST_SNAPSHOT[i]} --tags Key=Env,Value=${UPDATE_ENV_TAG_OPT} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to change tag 'env' to the Snapshot ${DST_SNAPSHOT[i]} in the destination account. Aborting.")
             fi
-            echo -e "${COLOR}Tags added sucessfully for snapshot ${DST_SNAPSHOT[i]}${NC}"
+            echo -e "${COLOR}Tags added successfully for snapshot${NC} ${DST_SNAPSHOT[i]}"
         fi
     done
 fi
-
-# Prepares the json data with the new snapshot IDs and remove unecessary information
-for (( i=0; i<${sLen}; i++)); do
-    echo -e "${COLOR}Snapshots${NC} ${SRC_SNAPSHOT[i]} ${COLOR}copied as${NC} ${DST_SNAPSHOT[i]}"
-    AMI_DETAILS=$(echo ${AMI_DETAILS} | sed -e s/${SRC_SNAPSHOT[i]}/${DST_SNAPSHOT[i]}/g )
-done
 
 # define a name for the new AMI
 NAME=$(echo ${AMI_DETAILS} | jq -r '.Name')
@@ -227,7 +227,7 @@ NEW_AMI_DETAILS=$(echo ${AMI_DETAILS} | jq --arg NAME "${NEW_NAME}" '.Name = $NA
 
 # Create the AMI in the destination
 CREATED_AMI=$(aws ec2 register-image --profile ${DST_PROFILE} --region ${DST_REGION} ${ENA_OPT} --cli-input-json "${NEW_AMI_DETAILS}" --query ImageId --output text || die "Unable to register AMI in the destination account. Aborting.")
-echo -e "${COLOR}AMI created succesfully in the destination account:${NC} ${CREATED_AMI}"
+echo -e "${COLOR}AMI created successfully in the destination account:${NC} ${CREATED_AMI}"
 
 # Copy AMI Tags
 if [ "${TAG_OPT}x" != "x" ]; then
@@ -238,6 +238,6 @@ if [ "${TAG_OPT}x" != "x" ]; then
         if [ "${UPDATE_ENV_TAG_OPT}x" != "x" ]; then
             $(aws ec2 create-tags --resources ${CREATED_AMI} --tags Key=Env,Value=${UPDATE_ENV_TAG_OPT} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to change tag 'env' to the AMI in the destination account. Aborting.")
         fi
-        echo -e "${COLOR}Tags added sucessfully for AMI ${CREATED_AMI}${NC}"
+        echo -e "${COLOR}Tags added successfully for AMI${NC} ${CREATED_AMI}"
     fi
 fi
