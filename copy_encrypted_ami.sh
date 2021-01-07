@@ -95,7 +95,9 @@ fi
 echo -e "${COLOR}Source region:${NC}" ${SRC_REGION}
 echo -e "${COLOR}Destination region:${NC}" ${DST_REGION}
 
-# Gets the destination account ID
+# Gets the source and destination account ID
+SRC_ACCT_ID=$(aws sts get-caller-identity --profile ${SRC_PROFILE} --query Account --output text || die "Unable to get the source account ID. Aborting.")
+echo -e "${COLOR}Source account ID:${NC}" ${SRC_ACCT_ID}
 DST_ACCT_ID=$(aws sts get-caller-identity --profile ${DST_PROFILE} --query Account --output text || die "Unable to get the destination account ID. Aborting.")
 echo -e "${COLOR}Destination account ID:${NC}" ${DST_ACCT_ID}
 
@@ -142,7 +144,7 @@ while read snapshotid; do
     echo -e "${COLOR}Permission added to Snapshot:${NC} ${snapshotid}"
     SRC_SNAPSHOT[$i]=${snapshotid}
     echo -e "${COLOR}Copying Snapshot:${NC} ${snapshotid}"
-    DST_SNAPSHOT[$i]=$(aws ec2 copy-snapshot --profile ${DST_PROFILE} --region ${DST_REGION} --source-region ${SRC_REGION} --source-snapshot-id $snapshotid --description "Copied from $snapshotid" --encrypted ${CMK_OPT} --query SnapshotId --output text|| die "Unable to copy snapshot. Aborting.")
+    DST_SNAPSHOT[$i]=$(aws ec2 copy-snapshot --profile ${DST_PROFILE} --region ${DST_REGION} --source-region ${SRC_REGION} --source-snapshot-id $snapshotid --description "Copied from $snapshotid (${SRC_ACCT_ID}|${SRC_REGION})" --encrypted ${CMK_OPT} --query SnapshotId --output text|| die "Unable to copy snapshot. Aborting.")
     i=$(( $i + 1 ))
     SIM_SNAP=$(aws ec2 describe-snapshots --profile "${DST_PROFILE}" --region "${DST_REGION}" --filters Name=status,Values=pending --query 'Snapshots[].SnapshotId' --output text | wc -w)
     while [ $SIM_SNAP -ge 5 ]; do
@@ -150,7 +152,6 @@ while read snapshotid; do
         sleep 30
         SIM_SNAP=$(aws ec2 describe-snapshots --profile "${DST_PROFILE}" --region "${DST_REGION}" --filters Name=status,Values=pending --query 'Snapshots[].SnapshotId' --output text | wc -w)
     done
-
 done <<< "$SNAPSHOT_IDS"
 
 # Wait 1 second to avoid issues with eventual consistency
