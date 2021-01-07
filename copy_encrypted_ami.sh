@@ -187,9 +187,26 @@ while read snapshotid; do
 done <<< "$SNAPSHOT_IDS"
 echo -e "${COLOR}EBS Snapshots copies completed ${NC}"
 
-# Prepares the json data with the new snapshot IDs and remove unecessary information
 sLen=${#SRC_SNAPSHOT[@]}
 
+# Copy Snapshots Tags
+if [ "${TAG_OPT}x" != "x" ]; then
+    for (( i=0; i<${sLen}; i++)); do
+        # Describes the source AMI and stores its contents
+        SNAPSHOT_DETAILS=$(aws ec2 describe-snapshots --profile ${SRC_PROFILE} --region ${SRC_REGION} --snapshot-id ${SRC_SNAPSHOT[i]}  --query 'Snapshots[0]')|| die "Unable to describe the Snapshot in the source account. Aborting."
+        SNAPSHOT_TAGS=$(echo ${SNAPSHOT_DETAILS} | jq '.Tags')"}"
+        if [ "${SNAPSHOT_TAGS}" != "null}" ]; then
+            NEW_SNAPSHOT_TAGS="{\"Tags\":"$(echo ${SNAPSHOT_TAGS} | tr -d ' ')
+            $(aws ec2 create-tags --resources ${DST_SNAPSHOT[i]} --cli-input-json ${NEW_SNAPSHOT_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the Snapshot ${DST_SNAPSHOT[i]} in the destination account. Aborting.")
+            if [ "${UPDATE_ENV_TAG_OPT}x" != "x" ]; then
+                $(aws ec2 create-tags --resources ${DST_SNAPSHOT[i]} --tags Key=Env,Value=${UPDATE_ENV_TAG_OPT} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to change tag 'env' to the Snapshot ${DST_SNAPSHOT[i]} in the destination account. Aborting.")
+            fi
+            echo -e "${COLOR}Tags added sucessfully for snapshot ${DST_SNAPSHOT[i]}${NC}"
+        fi
+    done
+fi
+
+# Prepares the json data with the new snapshot IDs and remove unecessary information
 for (( i=0; i<${sLen}; i++)); do
     echo -e "${COLOR}Snapshots${NC} ${SRC_SNAPSHOT[i]} ${COLOR}copied as${NC} ${DST_SNAPSHOT[i]}"
     AMI_DETAILS=$(echo ${AMI_DETAILS} | sed -e s/${SRC_SNAPSHOT[i]}/${DST_SNAPSHOT[i]}/g )
