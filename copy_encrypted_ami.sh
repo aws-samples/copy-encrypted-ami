@@ -17,7 +17,7 @@ set -o errexit
 
 usage()
 {
-    echo " Usage: ${0} -s profile -d profile -a ami_id [-k key] [-l source region] [-r destination region] [-n]
+    echo " Usage: ${0} -s profile -d profile -a ami_id [-k key] [-l source region] [-r destination region] [-n] [-u env tag value]
     -s,               AWS CLI profile name for AMI source account.
     -d,               AWS CLI profile name for AMI destination account.
     -a,               ID of AMI to be copied.
@@ -27,6 +27,7 @@ usage()
     -n,               Enable ENA support on new AMI. (Optional)
     -t,               Copy Tags. (Optional)
     -k,               Specific KMS Key ID for snapshot re-encryption in target AWS account. (Optional)
+    -u                Set this value to tag Env for the destination image (Optional). Valid only with -t
     -h,               Show this message.
 
 By default, the currently specified region for the source and destination AWS CLI profile will be used, and the default Amazon-managed KMS Key for EBS
@@ -47,7 +48,7 @@ command -v aws >/dev/null 2>&1 || die "aws cli is required but not installed. Ab
 
 
 
-while getopts ":s:d:a:N:l:r:k:nth" opt; do
+while getopts ":s:d:a:N:l:r:k:u:nth" opt; do
     case $opt in
         h) usage && exit 1
         ;;
@@ -64,6 +65,8 @@ while getopts ":s:d:a:N:l:r:k:nth" opt; do
         r) DST_REGION="$OPTARG"
         ;;
         k) CMK_ID="$OPTARG"
+        ;;
+        u) UPDATE_ENV_TAG_OPT="$OPTARG"
         ;;
         n) ENA_OPT="--ena-support"
         ;;
@@ -209,12 +212,15 @@ NEW_AMI_DETAILS=$(echo ${AMI_DETAILS} | jq --arg NAME "${NEW_NAME}" '.Name = $NA
 CREATED_AMI=$(aws ec2 register-image --profile ${DST_PROFILE} --region ${DST_REGION} ${ENA_OPT} --cli-input-json "${NEW_AMI_DETAILS}" --query ImageId --output text || die "Unable to register AMI in the destination account. Aborting.")
 echo -e "${COLOR}AMI created succesfully in the destination account:${NC} ${CREATED_AMI}"
 
-# Copy Tags
+# Copy AMI Tags
 if [ "${TAG_OPT}x" != "x" ]; then
     AMI_TAGS=$(echo ${AMI_DETAILS} | jq '.Tags')"}"
     if [ "${AMI_TAGS}" != "null}" ]; then
         NEW_AMI_TAGS="{\"Tags\":"$(echo ${AMI_TAGS} | tr -d ' ')
         $(aws ec2 create-tags --resources ${CREATED_AMI} --cli-input-json ${NEW_AMI_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the AMI in the destination account. Aborting.")
-        echo -e "${COLOR}Tags added sucessfully${NC}"
+        if [ "${UPDATE_ENV_TAG_OPT}x" != "x" ]; then
+            $(aws ec2 create-tags --resources ${CREATED_AMI} --tags Key=Env,Value=${UPDATE_ENV_TAG_OPT} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to change tag 'env' to the AMI in the destination account. Aborting.")
+        fi
+        echo -e "${COLOR}Tags added sucessfully for AMI ${CREATED_AMI}${NC}"
     fi
 fi
