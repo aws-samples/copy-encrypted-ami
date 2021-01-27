@@ -17,7 +17,7 @@ set -o errexit
 
 usage()
 {
-    echo " Usage: ${0} -s profile -d profile -a ami_id [-k key] [-l source region] [-r destination region] [-n] [-u env tag value]
+    echo " Usage: ${0} -s profile -d profile -a ami_id [-k key] [-l source region] [-r destination region] [-n] [-u tag:value]
     -s,               AWS CLI profile name for AMI source account.
     -d,               AWS CLI profile name for AMI destination account.
     -a,               ID of AMI to be copied.
@@ -27,7 +27,7 @@ usage()
     -n,               Enable ENA support on new AMI. (Optional)
     -t,               Copy Tags. (Optional)
     -k,               Specific KMS Key ID for snapshot re-encryption in target AWS account. (Optional)
-    -u                Set this value to tag Env for the destination image (Optional). Valid only with -t
+    -u                Update an existing or create a new tag with this value. (Optional). Valid only with -t
     -h,               Show this message.
 
 By default, the currently specified region for the source and destination AWS CLI profile will be used, and the default Amazon-managed KMS Key for EBS
@@ -66,7 +66,7 @@ while getopts ":s:d:a:N:l:r:k:u:nth" opt; do
         ;;
         k) CMK_ID="$OPTARG"
         ;;
-        u) UPDATE_ENV_TAG_OPT="$OPTARG"
+        u) UPSERT_TAG_OPT="$OPTARG"
         ;;
         n) ENA_OPT="--ena-support"
         ;;
@@ -187,9 +187,9 @@ while read snapshotid; do
 done <<< "$SNAPSHOT_IDS"
 echo -e "${COLOR}EBS Snapshots copies completed ${NC}"
 
+# Prepares the json data with the new snapshot IDs and remove unecessary information
 sLen=${#SRC_SNAPSHOT[@]}
 
-# Prepares the json data with the new snapshot IDs and remove unecessary information
 for (( i=0; i<${sLen}; i++)); do
     echo -e "${COLOR}Snapshots${NC} ${SRC_SNAPSHOT[i]} ${COLOR}copied as${NC} ${DST_SNAPSHOT[i]}"
     AMI_DETAILS=$(echo ${AMI_DETAILS} | sed -e s/${SRC_SNAPSHOT[i]}/${DST_SNAPSHOT[i]}/g )
@@ -204,8 +204,16 @@ if [ "${TAG_OPT}x" != "x" ]; then
         if [ "${SNAPSHOT_TAGS}" != "null}" ]; then
             NEW_SNAPSHOT_TAGS="{\"Tags\":"$(echo ${SNAPSHOT_TAGS} | tr -d ' ')
             $(aws ec2 create-tags --resources ${DST_SNAPSHOT[i]} --cli-input-json ${NEW_SNAPSHOT_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the Snapshot ${DST_SNAPSHOT[i]} in the destination account. Aborting.")
-            if [ "${UPDATE_ENV_TAG_OPT}x" != "x" ]; then
-                $(aws ec2 create-tags --resources ${DST_SNAPSHOT[i]} --tags Key=Env,Value=${UPDATE_ENV_TAG_OPT} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to change tag 'env' to the Snapshot ${DST_SNAPSHOT[i]} in the destination account. Aborting.")
+            if [ "${UPSERT_TAG_OPT}x" != "x" ]; then
+                SEPARATOR=":"
+                # Basic error handling (ie just find the separator to avoid AWS side issue for null values)
+                # Note that it does not handle any other error case (like non permitted characters)
+                if grep -q "${SEPARATOR}" <<< "${UPSERT_TAG_OPT}"; then
+                  UPSERT_TAG=(${UPSERT_TAG_OPT//:/ })
+                  $(aws ec2 create-tags --resources ${DST_SNAPSHOT[i]} --tags Key=${UPSERT_TAG[0]},Value=${UPSERT_TAG[1]} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add/update tag '${UPSERT_TAG[0]}:${UPSERT_TAG[1]}' to the Snapshot ${DST_SNAPSHOT[i]} in the destination account. Aborting.")
+                else
+                   echo -e "${RED}Unable to use ${UPSERT_TAG_OPT} as separator ":" has not been found. Bypassing...${NC}"
+                fi
             fi
             echo -e "${COLOR}Tags added successfully for snapshot${NC} ${DST_SNAPSHOT[i]}"
         fi
@@ -235,8 +243,17 @@ if [ "${TAG_OPT}x" != "x" ]; then
     if [ "${AMI_TAGS}" != "null}" ]; then
         NEW_AMI_TAGS="{\"Tags\":"$(echo ${AMI_TAGS} | tr -d ' ')
         $(aws ec2 create-tags --resources ${CREATED_AMI} --cli-input-json ${NEW_AMI_TAGS} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add tags to the AMI in the destination account. Aborting.")
-        if [ "${UPDATE_ENV_TAG_OPT}x" != "x" ]; then
-            $(aws ec2 create-tags --resources ${CREATED_AMI} --tags Key=Env,Value=${UPDATE_ENV_TAG_OPT} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to change tag 'env' to the AMI in the destination account. Aborting.")
+        if [ "${UPSERT_TAG_OPT}x" != "x" ]; then
+            SEPARATOR=":"
+            # Basic error handling (ie just find the separator to avoid AWS side issue for null values)
+            # Note that it does not handle any other error case (like non permitted characters)
+            if grep -q "${SEPARATOR}" <<< "${UPSERT_TAG_OPT}"; then
+              UPSERT_TAG=(${UPSERT_TAG_OPT//:/ })
+              $(aws ec2 create-tags --resources ${CREATED_AMI} --tags Key=${UPSERT_TAG[0]},Value=${UPSERT_TAG[1]} --profile ${DST_PROFILE} --region ${DST_REGION} || die "Unable to add/update tag '${UPSERT_TAG[0]}:${UPSERT_TAG[1]}' to the AMI in the destination account. Aborting.")
+            else
+               echo -e "${RED}Unable to use ${UPSERT_TAG_OPT} as separator ":" has not been found. Bypassing...${NC}"
+            fi
+
         fi
         echo -e "${COLOR}Tags added successfully for AMI${NC} ${CREATED_AMI}"
     fi
