@@ -27,7 +27,7 @@ usage()
     -n,               Enable ENA support on new AMI. (Optional)
     -t,               Copy Tags. (Optional)
     -k,               Specific KMS Key ID for snapshot re-encryption in target AWS account. (Optional)
-    -u                Update an existing or create a new tag with this value. (Optional). Valid only with -t
+    -u,               Update an existing or create a new tag with this value. Valid only with -t. (Optional)
     -h,               Show this message.
 
 By default, the currently specified region for the source and destination AWS CLI profile will be used, and the default Amazon-managed KMS Key for EBS
