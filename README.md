@@ -23,15 +23,17 @@ The source and destination profiles must be configured in the system where you a
 ## Usage
 
 ```
-copy_encrypted_ami.sh -s profile -d profile -a ami_id [-k key] [-l source region] [-r destination region] [-n]
+copy_encrypted_ami.sh -s profile -d profile -a ami_id [-k key] [-l source region] [-r destination region] [-n] [-u tag:value]
     -s,               AWS CLI profile name for AMI source account.
     -d,               AWS CLI profile name for AMI destination account.
     -a,               ID of AMI to be copied.
+    -N,               Name for new AMI.
     -l,               Region of the AMI to be copied.
     -r,               Destination region for copied AMI.
     -n,               Enable ENA support on new AMI. (Optional)
     -t,               Copy Tags. (Optional)
     -k,               Specific AWS KMS Key ID for snapshot re-encryption in target AWS account. (Optional)
+    -u,               Update an existing or create a new tag with this value. Valid only with -t. (Optional)
     -h,               Show this message.
 ```
 By default, the currently specified region for the source and destination AWS CLI profile will be used, and the default Amazon-managed AWS KMS Key for Amazon EBS.
