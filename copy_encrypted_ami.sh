@@ -15,6 +15,8 @@
 
 set -o errexit
 
+export AWS_DEFAULT_OUTPUT="json"
+
 usage()
 {
     echo " Usage: ${0} -s profile -d profile -a ami_id [-k key] [-l source region] [-r destination region] [-n] [-u tag:value]
