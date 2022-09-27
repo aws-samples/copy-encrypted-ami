@@ -101,9 +101,9 @@ echo -e "${COLOR}Source region:${NC}" ${SRC_REGION}
 echo -e "${COLOR}Destination region:${NC}" ${DST_REGION}
 
 # Gets the source and destination account ID
-SRC_ACCT_ID=$(aws sts get-caller-identity --profile ${SRC_PROFILE} --query Account --output text || die "Unable to get the source account ID. Aborting.")
+SRC_ACCT_ID=$(aws sts get-caller-identity --profile ${SRC_PROFILE} --region ${SRC_REGION} --query Account --output text || die "Unable to get the source account ID. Aborting.")
 echo -e "${COLOR}Source account ID:${NC}" ${SRC_ACCT_ID}
-DST_ACCT_ID=$(aws sts get-caller-identity --profile ${DST_PROFILE} --query Account --output text || die "Unable to get the destination account ID. Aborting.")
+DST_ACCT_ID=$(aws sts get-caller-identity --profile ${DST_PROFILE} --region ${DST_REGION} --query Account --output text || die "Unable to get the destination account ID. Aborting.")
 echo -e "${COLOR}Destination account ID:${NC}" ${DST_ACCT_ID}
 
 
