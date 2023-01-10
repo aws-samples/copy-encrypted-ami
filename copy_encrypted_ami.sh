@@ -21,6 +21,7 @@ usage()
 {
     echo " Usage: ${0} -s profile -d profile -a ami_id [-k key] [-l source region] [-r destination region] [-n] [-u tag:value]
     -s,               AWS CLI profile name for AMI source account.
+    -S,               AWS source account ID (exclusive with -s, use to copy AMIs already shared).
     -d,               AWS CLI profile name for AMI destination account.
     -a,               ID of AMI to be copied.
     -N,               Name for new AMI.
@@ -50,11 +51,13 @@ command -v aws >/dev/null 2>&1 || die "aws cli is required but not installed. Ab
 
 
 
-while getopts ":s:d:a:N:l:r:k:u:nth" opt; do
+while getopts ":s:S:d:a:N:l:r:k:u:nth" opt; do
     case $opt in
         h) usage && exit 1
         ;;
         s) SRC_PROFILE="$OPTARG"
+        ;;
+        S) SRC_ACCT_ID="$OPTARG"
         ;;
         d) DST_PROFILE="$OPTARG"
         ;;
@@ -84,7 +87,11 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # Validating Input parameters
-if [ "${SRC_PROFILE}x" == "x" ] || [ "${DST_PROFILE}x" == "x" ] || [ "${AMI_ID}x" == "x" ]; then
+if [ "${SRC_PROFILE}x" == "x" ] && [ "${SRC_ACCT_ID}x" == "x" ]; then
+    usage
+    exit 1;
+fi
+if [ "${DST_PROFILE}x" == "x" ] || [ "${AMI_ID}x" == "x" ]; then
     usage
     exit 1;
 fi
@@ -101,7 +108,12 @@ echo -e "${COLOR}Source region:${NC}" ${SRC_REGION}
 echo -e "${COLOR}Destination region:${NC}" ${DST_REGION}
 
 # Gets the source and destination account ID
-SRC_ACCT_ID=$(aws sts get-caller-identity --profile ${SRC_PROFILE} --region ${SRC_REGION} --query Account --output text || die "Unable to get the source account ID. Aborting.")
+if [ "${SRC_ACCT_ID}x" == "x" ]; then
+  USE_PROFILE=$SRC_PROFILE
+  SRC_ACCT_ID=$(aws sts get-caller-identity --profile ${SRC_PROFILE} --region ${SRC_REGION} --query Account --output text || die "Unable to get the source account ID. Aborting.")
+else
+  USE_PROFILE=$DST_PROFILE
+fi
 echo -e "${COLOR}Source account ID:${NC}" ${SRC_ACCT_ID}
 DST_ACCT_ID=$(aws sts get-caller-identity --profile ${DST_PROFILE} --region ${DST_REGION} --query Account --output text || die "Unable to get the destination account ID. Aborting.")
 echo -e "${COLOR}Destination account ID:${NC}" ${DST_ACCT_ID}
@@ -119,34 +131,38 @@ if [ "${CMK_ID}x" != "x" ]; then
 fi
 
 # Describes the source AMI and stores its contents
-AMI_DETAILS=$(aws ec2 describe-images --profile ${SRC_PROFILE} --region ${SRC_REGION} --image-id ${AMI_ID}  --query 'Images[0]')|| die "Unable to describe the AMI in the source account. Aborting."
+AMI_DETAILS=$(aws ec2 describe-images --profile ${USE_PROFILE} --region ${SRC_REGION} --image-id ${AMI_ID}  --query 'Images[0]')|| die "Unable to describe the AMI in the source account. Aborting."
 
 # Retrieve the snapshots and key ID's
 SNAPSHOT_IDS=$(echo ${AMI_DETAILS} | jq -r '.BlockDeviceMappings[] | select(has("Ebs")) | .Ebs.SnapshotId' || die "Unable to get the encrypted snapshot ids from AMI. Aborting.")
 echo -e "${COLOR}Snapshots found:${NC}" ${SNAPSHOT_IDS}
 
-KMS_KEY_IDS=$(aws ec2 describe-snapshots --profile ${SRC_PROFILE} --region ${SRC_REGION}  --snapshot-ids ${SNAPSHOT_IDS} --query 'Snapshots[?Encrypted==`true`]' | jq -r '[.[].KmsKeyId] | unique | .[]' || die "Unable to get KMS Key Ids from the snapshots. Aborting.")
+if [ "${SRC_PROFILE}x" != "x" ]; then
+    KMS_KEY_IDS=$(aws ec2 describe-snapshots --profile ${SRC_PROFILE} --region ${SRC_REGION}  --snapshot-ids ${SNAPSHOT_IDS} --query 'Snapshots[?Encrypted==`true`]' | jq -r '[.[].KmsKeyId] | unique | .[]' || die "Unable to get KMS Key Ids from the snapshots. Aborting.")
 
-if [ "${KMS_KEY_IDS}x" != "x" ] ; then
-  echo -e "${COLOR}Customer managed KMS key(s) used on source AMI:${NC}" ${KMS_KEY_IDS}
-  # Iterate over the Keys and create the Grants
-  while read key; do
-      KEY_MANAGER=$(aws kms describe-key --key-id ${key} --query "KeyMetadata.KeyManager" --profile ${SRC_PROFILE} --region ${SRC_REGION} --output text || die "Unable to retrieve the Key Manager information. Aborting.")
-      if [ "${KEY_MANAGER}" == "AWS" ] ; then
-          die "The Default AWS/EBS key is being used by the snapshot. Unable to proceed. Aborting."
+    if [ "${KMS_KEY_IDS}x" != "x" ]; then
+        echo -e "${COLOR}Customer managed KMS key(s) used on source AMI:${NC}" ${KMS_KEY_IDS}
+        # Iterate over the Keys and create the Grants
+        while read key; do
+            KEY_MANAGER=$(aws kms describe-key --key-id ${key} --query "KeyMetadata.KeyManager" --profile ${SRC_PROFILE} --region ${SRC_REGION} --output text || die "Unable to retrieve the Key Manager information. Aborting.")
+            if [ "${KEY_MANAGER}" == "AWS" ] ; then
+                die "The Default AWS/EBS key is being used by the snapshot. Unable to proceed. Aborting."
+            fi
+            aws kms --profile ${SRC_PROFILE} --region ${SRC_REGION} create-grant --key-id $key --grantee-principal $DST_ACCT_ID --operations DescribeKey Decrypt CreateGrant > /dev/null || die "Unable to create a KMS grant for the destination account. Aborting."
+            echo -e "${COLOR}Grant created for:${NC}" ${key}
+        done <<< "$KMS_KEY_IDS"
+      else
+        echo -e "${COLOR}No encrypted EBS Volumes were found in the source AMI!${NC}"
       fi
-      aws kms --profile ${SRC_PROFILE} --region ${SRC_REGION} create-grant --key-id $key --grantee-principal $DST_ACCT_ID --operations DescribeKey Decrypt CreateGrant > /dev/null || die "Unable to create a KMS grant for the destination account. Aborting."
-      echo -e "${COLOR}Grant created for:${NC}" ${key}
-  done <<< "$KMS_KEY_IDS"
-else
-  echo -e "${COLOR}No encrypted EBS Volumes were found in the source AMI!${NC}"
 fi
 
 # Iterate over the snapshots, adding permissions for the destination account and copying
 i=0
 while read snapshotid; do
-    aws ec2 --profile ${SRC_PROFILE} --region ${SRC_REGION} modify-snapshot-attribute --snapshot-id $snapshotid --attribute createVolumePermission --operation-type add --user-ids $DST_ACCT_ID || die "Unable to add permissions on the snapshots for the destination account. Aborting."
-    echo -e "${COLOR}Permission added to Snapshot:${NC} ${snapshotid}"
+    if [ "${SRC_PROFILE}x" != "x" ]; then
+        aws ec2 --profile ${SRC_PROFILE} --region ${SRC_REGION} modify-snapshot-attribute --snapshot-id $snapshotid --attribute createVolumePermission --operation-type add --user-ids $DST_ACCT_ID || die "Unable to add permissions on the snapshots for the destination account. Aborting."
+        echo -e "${COLOR}Permission added to Snapshot:${NC} ${snapshotid}"
+    fi
     SRC_SNAPSHOT[$i]=${snapshotid}
     echo -e "${COLOR}Copying Snapshot:${NC} ${snapshotid}"
     DST_SNAPSHOT[$i]=$(aws ec2 copy-snapshot --profile ${DST_PROFILE} --region ${DST_REGION} --source-region ${SRC_REGION} --source-snapshot-id $snapshotid --description "Copied from $snapshotid (${SRC_ACCT_ID}|${SRC_REGION})" --encrypted ${CMK_OPT} --query SnapshotId --output text|| die "Unable to copy snapshot. Aborting.")
@@ -201,7 +217,7 @@ done
 if [ "${TAG_OPT}x" != "x" ]; then
     for (( i=0; i<${sLen}; i++)); do
         # Describes the source AMI and stores its contents
-        SNAPSHOT_DETAILS=$(aws ec2 describe-snapshots --profile ${SRC_PROFILE} --region ${SRC_REGION} --snapshot-id ${SRC_SNAPSHOT[i]}  --query 'Snapshots[0]')|| die "Unable to describe the Snapshot in the source account. Aborting."
+        SNAPSHOT_DETAILS=$(aws ec2 describe-snapshots --profile ${USE_PROFILE} --region ${SRC_REGION} --snapshot-id ${SRC_SNAPSHOT[i]}  --query 'Snapshots[0]')|| die "Unable to describe the Snapshot in the source account. Aborting."
         SNAPSHOT_TAGS=$(echo ${SNAPSHOT_DETAILS} | jq '.Tags')"}"
         if [ "${SNAPSHOT_TAGS}" != "null}" ]; then
             NEW_SNAPSHOT_TAGS="{\"Tags\":"$(echo ${SNAPSHOT_TAGS} | tr -d ' ')
