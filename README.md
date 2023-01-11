@@ -18,7 +18,7 @@ aws cli - https://docs.aws.amazon.com/cli/latest/userguide/installing.html
 
 
 The source and destination profiles must be configured in the system where you are running the script from.
-
+The source and destination profiles can be the same if the intent is to copy an AMI that has already been shared to the destination account, but isn't currently stored there.
 
 ## Usage
 

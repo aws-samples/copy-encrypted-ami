@@ -135,8 +135,10 @@ if [ "${KMS_KEY_IDS}x" != "x" ] ; then
       if [ "${KEY_MANAGER}" == "AWS" ] ; then
           die "The Default AWS/EBS key is being used by the snapshot. Unable to proceed. Aborting."
       fi
-      aws kms --profile ${SRC_PROFILE} --region ${SRC_REGION} create-grant --key-id $key --grantee-principal $DST_ACCT_ID --operations DescribeKey Decrypt CreateGrant > /dev/null || die "Unable to create a KMS grant for the destination account. Aborting."
-      echo -e "${COLOR}Grant created for:${NC}" ${key}
+      if [ "${SRC_PROFILE}" != "${DST_PROFILE}"  ] ; then
+          aws kms --profile ${SRC_PROFILE} --region ${SRC_REGION} create-grant --key-id $key --grantee-principal $DST_ACCT_ID --operations DescribeKey Decrypt CreateGrant > /dev/null || die "Unable to create a KMS grant for the destination account. Aborting."
+          echo -e "${COLOR}Grant created for:${NC}" ${key}
+      fi
   done <<< "$KMS_KEY_IDS"
 else
   echo -e "${COLOR}No encrypted EBS Volumes were found in the source AMI!${NC}"
@@ -145,8 +147,10 @@ fi
 # Iterate over the snapshots, adding permissions for the destination account and copying
 i=0
 while read snapshotid; do
-    aws ec2 --profile ${SRC_PROFILE} --region ${SRC_REGION} modify-snapshot-attribute --snapshot-id $snapshotid --attribute createVolumePermission --operation-type add --user-ids $DST_ACCT_ID || die "Unable to add permissions on the snapshots for the destination account. Aborting."
-    echo -e "${COLOR}Permission added to Snapshot:${NC} ${snapshotid}"
+    if [ ${SRC_PROFILE} != ${DST_PROFILE} ]; then
+       aws ec2 --profile ${SRC_PROFILE} --region ${SRC_REGION} modify-snapshot-attribute --snapshot-id $snapshotid --attribute createVolumePermission --operation-type add --user-ids $DST_ACCT_ID || die "Unable to add permissions on the snapshots for the destination account. Aborting."
+       echo -e "${COLOR}Permission added to Snapshot:${NC} ${snapshotid}"
+    fi
     SRC_SNAPSHOT[$i]=${snapshotid}
     echo -e "${COLOR}Copying Snapshot:${NC} ${snapshotid}"
     DST_SNAPSHOT[$i]=$(aws ec2 copy-snapshot --profile ${DST_PROFILE} --region ${DST_REGION} --source-region ${SRC_REGION} --source-snapshot-id $snapshotid --description "Copied from $snapshotid (${SRC_ACCT_ID}|${SRC_REGION})" --encrypted ${CMK_OPT} --query SnapshotId --output text|| die "Unable to copy snapshot. Aborting.")
