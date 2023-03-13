@@ -30,6 +30,7 @@ usage()
     -t,               Copy Tags. (Optional)
     -k,               Specific KMS Key ID for snapshot re-encryption in target AWS account. (Optional)
     -u,               Update an existing or create a new tag with this value. Valid only with -t. (Optional)
+    -y,               Don't add encryption options to snaps. (Optional)
     -h,               Show this message.
 
 By default, the currently specified region for the source and destination AWS CLI profile will be used, and the default Amazon-managed KMS Key for EBS
@@ -40,7 +41,7 @@ By default, the currently specified region for the source and destination AWS CL
 die()
 {
     BASE=$(basename -- "$0")
-    echo -e "${RED} $BASE: error: $@ ${NC}" >&2
+    echo -e "${RED} $BASE: error: $* " "${NC}" >&2
     exit 1
 }
 
@@ -50,7 +51,7 @@ command -v aws >/dev/null 2>&1 || die "aws cli is required but not installed. Ab
 
 
 
-while getopts ":s:d:a:N:l:r:k:u:nth" opt; do
+while getopts ":s:d:a:N:l:r:k:u:nthy" opt; do
     case $opt in
         h) usage && exit 1
         ;;
@@ -73,6 +74,8 @@ while getopts ":s:d:a:N:l:r:k:u:nth" opt; do
         n) ENA_OPT="--ena-support"
         ;;
         t) TAG_OPT="y"
+        ;;
+        y) DONT_ENCRYPT="y"
         ;;
         \?) echo "Invalid option -$OPTARG" >&2
         ;;
@@ -146,6 +149,12 @@ fi
 
 # Iterate over the snapshots, adding permissions for the destination account and copying
 i=0
+if [ "${DONT_ENCRYPT}x" != "x" ]; then
+    # If requested, don't send in encryption options at all
+    ENCRYPTION_OPTIONS=""
+else
+    ENCRYPTION_OPTIONS="--encrypted ${CMK_OPT}"
+fi
 while read snapshotid; do
     if [ ${SRC_PROFILE} != ${DST_PROFILE} ]; then
        aws ec2 --profile ${SRC_PROFILE} --region ${SRC_REGION} modify-snapshot-attribute --snapshot-id $snapshotid --attribute createVolumePermission --operation-type add --user-ids $DST_ACCT_ID || die "Unable to add permissions on the snapshots for the destination account. Aborting."
@@ -153,7 +162,7 @@ while read snapshotid; do
     fi
     SRC_SNAPSHOT[$i]=${snapshotid}
     echo -e "${COLOR}Copying Snapshot:${NC} ${snapshotid}"
-    DST_SNAPSHOT[$i]=$(aws ec2 copy-snapshot --profile ${DST_PROFILE} --region ${DST_REGION} --source-region ${SRC_REGION} --source-snapshot-id $snapshotid --description "Copied from $snapshotid (${SRC_ACCT_ID}|${SRC_REGION})" --encrypted ${CMK_OPT} --query SnapshotId --output text|| die "Unable to copy snapshot. Aborting.")
+    DST_SNAPSHOT[$i]=$(aws ec2 copy-snapshot --profile ${DST_PROFILE} --region ${DST_REGION} --source-region ${SRC_REGION} --source-snapshot-id $snapshotid --description "Copied from $snapshotid (${SRC_ACCT_ID}|${SRC_REGION})" ${ENCRYPTION_OPTIONS} --query SnapshotId --output text|| die "Unable to copy snapshot. Aborting.")
     i=$(( $i + 1 ))
     SIM_SNAP=$(aws ec2 describe-snapshots --profile "${DST_PROFILE}" --region "${DST_REGION}" --filters Name=status,Values=pending --query 'Snapshots[].SnapshotId' --output text | wc -w)
     while [ $SIM_SNAP -ge 5 ]; do
