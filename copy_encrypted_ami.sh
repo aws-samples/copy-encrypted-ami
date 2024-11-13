@@ -237,7 +237,7 @@ else
 fi
 
 # Copy AMI structure while removing read-only / non-idempotent values
-NEW_AMI_DETAILS=$(echo ${AMI_DETAILS} | jq --arg NAME "${NEW_NAME}" '.Name = $NAME | del(.. | .Encrypted?) | del(.Tags,.Platform,.PlatformDetails,.UsageOperation,.ImageId,.CreationDate,.OwnerId,.ImageLocation,.State,.ImageType,.RootDeviceType,.Hypervisor,.Public,.EnaSupport,.ProductCodes,.SourceInstanceId )')
+NEW_AMI_DETAILS=$(echo ${AMI_DETAILS} | jq --arg NAME "${NEW_NAME}" '.Name = $NAME | del(.. | .Encrypted?) | del(.Tags,.Platform,.PlatformDetails,.UsageOperation,.ImageId,.CreationDate,.OwnerId,.ImageLocation,.State,.ImageType,.RootDeviceType,.Hypervisor,.Public,.EnaSupport,.ProductCodes,.SourceInstanceId,.ImageOwnerAlias,.DeprecationTime )')
 
 # Create the AMI in the destination
 CREATED_AMI=$(aws ec2 register-image --profile ${DST_PROFILE} --region ${DST_REGION} ${ENA_OPT} --cli-input-json "${NEW_AMI_DETAILS}" --query ImageId --output text || die "Unable to register AMI in the destination account. Aborting.")
